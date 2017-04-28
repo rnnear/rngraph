@@ -1,4 +1,3 @@
-//test.cpp
 #include<iostream>
 #include<string>
 #include<map>
