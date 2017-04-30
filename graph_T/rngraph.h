@@ -27,10 +27,7 @@ public:
 	rnedge() = default;
 	rnedge(const ID_T& rnid_from, const ID_T& rnid_to, const Value_T& rnweight):from(rnid_from), 
 		to(rnid_to), weight(rnweight)
-	{
-#ifndef DEBUG1
-#endif
-	}
+	{}
 	rnedge(const rnedge& rncopy):rnedge(rncopy.from, rncopy.to, rncopy.weight){}
 	rnedge& operator=(rnedge& rncopy)
 	{
@@ -55,19 +52,42 @@ class rngraph
 	}
 public: 
 	typedef std::size_t size_type;
-	//using size_type = std::size_t;
 	rngraph() 
 	{
 		initialize();   // judge whether ID_T overloaded operator< or not
 	}
-	rngraph(const std::ifstream&); // construct graph by a formatted txt file
+	rngraph(std::istream& rninput_file): rngraph() // construct graph by a formatted txt file
+	{
+#ifndef DEBUG
+int i = 0;
+#endif
+		while(rninput_file)
+		{
+#ifndef DEBUG
+//std::cout<<++i<<std::endl;
+#endif
+			ID_T rnfrom, rnto;
+			Value_T rnvalue;
+			rninput_file>>rnfrom>>rnto>>rnvalue;
+			if(rnfrom == "")
+				continue;
+#ifndef DEBUG
+std::cout<<"from:"<<rnfrom<<" to:"<<rnto<<std::endl;
+#endif
+			PushEdge(rnfrom, rnto, rnvalue);
+		}
+		rninput_file.clear();
+	}
 	~rngraph(){}
 
 	//add net edge
 	bool PushEdge(const ID_T& rnfrom_id, const ID_T& rnto_id, const Value_T& rnval) //iterator exit
 	{
 		if(rnfrom_id == rnto_id)
+		{
+			std::cout<<"ring: "<<rnfrom_id<<std::endl;
 			throw std::invalid_argument("add ring to graph is not permitted!");
+		}
 		try
 		{
 			if(IsEdge(rnfrom_id, rnto_id))
@@ -115,6 +135,7 @@ public:
 			auto rnptr = graph[rnfrom_pos].second;
 			rnptr->push_back({rnto_pos, rnval});
 		}
+		++edges;
 		return true;
 	}
 	template<typename...Args>
@@ -148,6 +169,10 @@ public:
 	{
 		return get_pos(rnid) != NULL_POS;
 	}
+	size_type size() const
+	{
+		return graph.size();
+	}
 //private:
 	//Value_T get_value(const Value_T& rnweight) const  //get weight from object of Value_T, 
 	//{								      //getting Value_T value directly is accepted as default
@@ -171,6 +196,8 @@ public:
 	rnpath<ID_T, Value_T> rnDijkstra(const ID_T&, const ID_T&) const;
 	std::pair<bool, ID_T*> DFS(ID_T& rnorgin, std::function<bool(ID_T&)> rnvisit) //depth-first search  one-place predicate bool(ID_t&)
 	{
+		if(size() == 0)
+			return {false, &(rnorgin)};
 		std::vector<bool> rnrecord_vec(graph.size(), false); //visited table
 		auto rnorgin_pos = get_pos(rnorgin);
 		auto rnret = dfs_recursion(rnorgin_pos, rnvisit, rnrecord_vec);
@@ -222,6 +249,7 @@ private:
 	std::vector<std::pair<ID_T, std::shared_ptr<std::vector<std::pair<size_type, Value_T>>>>> graph; 
 	std::vector<std::pair<ID_T, size_type>> pos_vec;
 	std::map<ID_T, size_type> pos_map;
+	size_type edges = 0;
 	//std::shared_ptr<std::vector<std::pair<ID_T, size_type>>> id_pos_vec_ptr = std::make_shared<std::vector<std::pair<ID_T, size_type>>>();
 
 };
@@ -254,6 +282,8 @@ std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::dfs_recursion(const size_type& rn
 template<typename Value_T, typename ID_T>
 std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::BFS(ID_T& rnorgin, std::function<bool(ID_T&)> rnvisit)
 {
+	if(size() == 0)
+		return {false, &(rnorgin)};
 	std::vector<bool> rnrecord_vec(graph.size(), false); //visited table
 	std::queue<size_type> rnq;
 	size_type rnorgin_pos = get_pos(rnorgin);
@@ -262,7 +292,9 @@ std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::BFS(ID_T& rnorgin, std::function<
 	{
 		size_type rntemp_pos = rnq.front();
 		rnq.pop();
-		bool rnsign = rnvisit(graph[rntemp_pos].first);
+		bool rnsign = false;
+		if(!(rnrecord_vec[rntemp_pos]))                       //there are repeated elements in the queue
+			rnsign = rnvisit(graph[rntemp_pos].first);
 		rnrecord_vec[rntemp_pos] = true;
 		if(rnsign)
 			return {true, &(graph[rntemp_pos].first)};
