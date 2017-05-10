@@ -1,9 +1,10 @@
 #include<iostream>
+#include<functional>
 #include<string>
 #include<map>
 #include<set>
 #include<memory>
-#include"rngraph.h"
+///////#include"rngraph.h"
 
 //using namespace std;
 //class rnt
@@ -34,16 +35,11 @@
 //};
 int main()
 {
-//	using size_type = std::size_t;
-//	using ID_T = string;
-//	std::shared_ptr<std::vector<std::pair<ID_T, size_type>>> id_pos_vec_ptr = std::make_shared<std::vector<std::pair<ID_T, size_type>>>();
-//	std::shared_ptr<std::map<ID_T, size_type>> id_pos_map_ptr = std::make_shared<std::map<ID_T, size_type>>();
-
-	std::string rnfilename = "./test_graph.txt";
-	std::ifstream rninfile(rnfilename);
-	rngraph<int> rng1(rninfile);
-	rninfile.close();
-
+	//std::string rnfilename = "./test_graph.txt";
+	//std::ifstream rninfile(rnfilename);
+	//rngraph<int> rng1(rninfile);
+	//rninfile.close();
+/*
 	rngraph<int> rng0;
 	rng0.PushEdge("1","2",1);
 	rng0.PushEdge("1","4",3);
@@ -58,4 +54,11 @@ int main()
 	std::cout<<std::endl;
 	rng1.BFS(rnorgin, rnv);
 	std::cout<<std::endl;
+*/
+	auto rnv1 = [](const int& rni)->bool {return true;};
+	auto rnv2 = [](int& rni)->bool {return true;};
+	std::function<bool(const int&)> rnfun1 = rnv1;
+	std::function<bool(int&)> rnfun2 = rnv2;    
+	rnfun2 = rnfun1;
+
 }
