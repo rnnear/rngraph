@@ -3,6 +3,7 @@
 #include<fstream>
 #include<string>
 #include<vector>
+#include<forward_list>
 #include<map>
 #include<queue>
 #include<utility>
@@ -15,19 +16,22 @@
 #define DEBUG1
 #ifndef rngraph_h
 #define rngraph_h
+#define rnpoistion_type std::size_t
 #define NULL_PTR nullptr
 #define NULL_POS static_cast<unsigned>(-1)
 template<typename T1, typename T2> class rnpath;
 template<typename T1, typename T2> class rnedge;
 template<typename T1, typename T2> class rngraph;
+
+//auxiliary class template, including 'rnedge', 'rnmark_node', 'rnpath', 'rncompare'
 template<typename Value_T, typename ID_T>
 class rnedge
 {
 public:
+	friend class rngraph<Value_T, ID_T>;
 	rnedge() = default;
 	rnedge(const ID_T& rnid_from, const ID_T& rnid_to, const Value_T& rnweight):from(rnid_from), 
-		to(rnid_to), weight(rnweight)
-	{}
+		to(rnid_to), weight(rnweight){}
 	rnedge(const rnedge& rncopy):rnedge(rncopy.from, rncopy.to, rncopy.weight){}
 	rnedge& operator=(rnedge& rncopy)
 	{
@@ -41,17 +45,65 @@ private:
 	ID_T to;
 	Value_T weight;
 };
+template<typename Value_T, typename ID_T>
+class rnmark_node
+{
+public:
+	using size_type = rnposition_type;
+	rnmark_node() = default;
+	rnmark_node(const size_type rnlast_n, const size_type rnthis_n, const Value_T& to_this_w): last_node(rnlast_n),
+				this_node(rnthis_n), to_this_weight(to_this_w){};
+	size_type get_last() const
+	{
+		return last_node; 
+	}
+	size_type get_this() const
+	{
+		return this_node;
+	}
+	Value_T get_weight() const
+	{
+		return to_this_weight;
+	}
+	Value_T add(const Value_T& rnw)
+	{
+		to_this_weight += rnw;
+	}
+private:
+	size_type last_node, this_node;  //record link information by node position
+	Value_T to_this_weight;
+};
+template<typename Value_T, typename ID_T>
+class rnpath
+{
+public:
+	rnpath() = default;
+	rnpath(std::shared_ptr<std::forward_list<ID_T>>& rnflist_ptr, const Value_T& rnsum_w):path_flist_ptr(rnflist_ptr), sum_weight(rnsum_w){}
+private:
+	std::shared_ptr<std::forward_list<ID_T>> path_flist_ptr;
+	Value_T sum_weight;
+};
+template<typename Value_T, typename ID_T>
+class rncompare
+{
+	bool operator()(const std::pair<rnposition_type, Value_T>& rnleft, const std::pair<rnposition_type, Value_T>& rnright)
+	{
+		return rngraph<Value_T, ID_T>::get_weight(rnleft.second) > rngraph<Value_T, ID_T>::get_weight(rnright.second);
+	}
+};
+//class template rngraph
 template<typename Value_T, typename ID_T = std::string>
 class rngraph
 {
-	friend class rnedge<Value_T, ID_T>;
+	//friend class rnedge<Value_T, ID_T>;
+	friend class rncompare<Value_T, ID_T>;
 	static bool support_less_operator;
 	static void initialize()
 	{
 		support_less_operator = HasOperatorLess<ID_T>::value;
 	}
 public: 
-	typedef std::size_t size_type;
+	typedef rnposition_type size_type;
 	rngraph() 
 	{
 		initialize();   // judge whether ID_T overloaded operator< or not
@@ -80,7 +132,7 @@ std::cout<<"from:"<<rnfrom<<" to:"<<rnto<<std::endl;
 	}
 	~rngraph(){}
 
-	//add net edge
+//add net edge
 	bool PushEdge(const ID_T& rnfrom_id, const ID_T& rnto_id, const Value_T& rnval) //iterator exit
 	{
 		if(rnfrom_id == rnto_id)
@@ -156,7 +208,7 @@ std::cout<<"from:"<<rnfrom<<" to:"<<rnto<<std::endl;
 		PushEdge(rne);
 		return PushEdge(args...);
 	}
-	//net information
+//net information
 	bool IsEdge(const ID_T& rnfrom_id, const ID_T& rnto_id) const
 	{
 		return (static_cast<unsigned>(GetWeight(rnfrom_id, rnto_id)) != NULL_POS);
@@ -173,27 +225,26 @@ std::cout<<"from:"<<rnfrom<<" to:"<<rnto<<std::endl;
 	{
 		return graph.size();
 	}
-//private:
-	//Value_T get_value(const Value_T& rnweight) const  //get weight from object of Value_T, 
-	//{								      //getting Value_T value directly is accepted as default
-	//	return rnweight;
-	//}
-//public:
-	Value_T GetWeight(const ID_T& rnfrom_id, const ID_T& rnto_id) const //-> decltype(get_value(Value_T())) const
+	Value_T GetWeight(const ID_T& rnfrom_id, const ID_T& rnto_id) const
 	{
 		
 		auto rnptr = get_neighbor(rnfrom_id);
 		auto rnto_pos = get_pos(rnto_id);
 		if(rnptr == NULL_PTR || rnto_pos == NULL_POS)
-			return NULL_POS;
+			throw std::invalid_argument("Invalid edge!!\n");
 		auto rncompare_temp = [&rnto_pos](const std::pair<size_type, Value_T>& rnpair){return rnpair.first == rnto_pos;};
 		auto rniter = std::find_if(rnptr->cbegin(), rnptr->cend(), rncompare_temp);
 		if(rniter == rnptr->cend())
-			return NULL_POS;
-		//return get_value(rniter->second);
-		return rniter->second;
+			throw std::invalid_argument("Invalid edge!!\n");
+		return get_value(rniter->second);
+		//return rniter->second;
 	}
-	rnpath<ID_T, Value_T> rnDijkstra(const ID_T&, const ID_T&) const;
+	Value_T GetWeight(const rnedge<Value_T, ID_T>& rne) const
+	{
+		return GetWeight(rne.from, rne.to);
+	}
+//important methods
+	rnpath<Value_T, ID_T> rnDijkstra(const ID_T&, const ID_T&) const;
 	std::pair<bool, ID_T*> DFS(ID_T& rnorgin, std::function<bool(ID_T&)> rnvisit) //depth-first search  one-place predicate bool(ID_t&)
 	{
 		if(size() == 0)
@@ -203,14 +254,30 @@ std::cout<<"from:"<<rnfrom<<" to:"<<rnto<<std::endl;
 		auto rnret = dfs_recursion(rnorgin_pos, rnvisit, rnrecord_vec);
 		return rnret;
 	}
+	bool DFS(const ID_T& rnorgin, std::function<bool(const ID_T&)> rnvisit) const                           
+	{
+		ID_T rnorgin_temp = rnorgin;
+		std::function<bool(ID_T&)> rnvisit_temp = rnvisit; //for function template converting type1(const type2) to type1(type2) is valid
+		auto rnret = DFS(rnorgin_temp, rnvisit_temp);
+		return rnret.first;
+	}
 	std::pair<bool, ID_T*> BFS(ID_T& rnorgin, std::function<bool(ID_T&)> rnvisit);  //breadth-first traverse
-	//ID_T& DFS(const ID_T& rnorgin, const ID_T& rndest);                            
+	bool BFS(const ID_T& rnorgin, std::function<bool(const ID_T&)> rnvisit) const
+	{
+		ID_T rnorgin_temp = rnorgin;
+		std::function<bool(ID_T&)> rnvisit_temp = rnvisit;
+		auto rnret = BFS(rnorgin_temp, rnvisit_temp);
+		return rnret.first;
+	}
 	//ID_T& BFS(const ID_T& rnorgin, const ID_T& rndest);
 	//void push_vertex(size_type, size_type, const Value_T&); //iterator exit 
 	//template<typename...Args>
 	//void push_vertex(size_type, size_type, const Value_T&, const Args&...args);  //mutable parameter function template
 private:
-	
+	static Value_T get_value(const Value_T& rnweight)  //get weight from object of Value_T, 
+	{						  //getting value of Value_T object directly is accepted as default
+		return rnweight;
+	}
 	std::shared_ptr<std::vector<std::pair<size_type, Value_T>>> get_neighbor(const ID_T& rnid) const
 	{
 		auto rnpos = get_pos(rnid);
@@ -250,13 +317,17 @@ private:
 	std::vector<std::pair<ID_T, size_type>> pos_vec;
 	std::map<ID_T, size_type> pos_map;
 	size_type edges = 0;
-	//std::shared_ptr<std::vector<std::pair<ID_T, size_type>>> id_pos_vec_ptr = std::make_shared<std::vector<std::pair<ID_T, size_type>>>();
 
 };
+
+/// static member initialization
 template<typename Value_T, typename ID_T>
-bool rngraph<Value_T, ID_T>::support_less_operator = false;
+bool rngraph<Value_T, ID_T>::support_less_operator = false;  //initialize the signal
+///
+///define member function
 template<typename Value_T, typename ID_T>
-std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::dfs_recursion(const size_type& rnorgin, std::function<bool(ID_T&)> rnvisit, std::vector<bool>& rnrecord_vec) //depth-first traverse
+std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::dfs_recursion
+		(const size_type& rnorgin, std::function<bool(ID_T&)> rnvisit, std::vector<bool>& rnrecord_vec) //depth-first traverse
 {
 	auto rnpair = get_neighbor_iter_pair(rnorgin);
 	auto rnbegin = rnpair.first, rnend = rnpair.second;
@@ -280,7 +351,8 @@ std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::dfs_recursion(const size_type& rn
 	return {false, &(graph[rnorgin].first)};
 }
 template<typename Value_T, typename ID_T>
-std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::BFS(ID_T& rnorgin, std::function<bool(ID_T&)> rnvisit)
+std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::BFS
+			(ID_T& rnorgin, std::function<bool(ID_T&)> rnvisit)
 {
 	if(size() == 0)
 		return {false, &(rnorgin)};
@@ -307,5 +379,16 @@ std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::BFS(ID_T& rnorgin, std::function<
 	}
 	return {false, &(graph[rnorgin_pos].first)};
 }
+template<typename Value_T, typename ID_T>
+rnpath<Value_T, ID_T> rngraph<Value_T, ID_T>::rnDijkstra(const ID_T& rnorgin, const ID_T& rndest) const
+{
+	typedef std::pair<size_type, Value_T> P_ELEMENT_T;
+	typedef std::vector<P_ELEMENT_T> P_ELEMENT_CONTAINER_T;
+	typedef std::priority_queue<P_ELEMENT_T, P_ELEMENT_CONTAINER_T, rncompare<Value_T, ID_T>> P_T;
+	
+}
+
+
+///
 #endif
 
