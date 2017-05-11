@@ -7,6 +7,7 @@
 #include<map>
 #include<queue>
 #include<utility>
+#include<tuple>
 #include<memory>
 #include<algorithm>
 #include<stdexcept>
@@ -16,14 +17,14 @@
 #define DEBUG1
 #ifndef rngraph_h
 #define rngraph_h
-#define rnpoistion_type std::size_t
+#define rnposition_type std::size_t
 #define NULL_PTR nullptr
-#define NULL_POS static_cast<unsigned>(-1)
+#define NULL_POS static_cast<std::size_t>(-1)
 template<typename T1, typename T2> class rnpath;
 template<typename T1, typename T2> class rnedge;
 template<typename T1, typename T2> class rngraph;
 
-//auxiliary class template, including 'rnedge', 'rnmark_node', 'rnpath', 'rncompare'
+//auxiliary class template, including 'rnedge', 'rnpath', 'rncompare', 'rncompare2'
 template<typename Value_T, typename ID_T>
 class rnedge
 {
@@ -45,40 +46,44 @@ private:
 	ID_T to;
 	Value_T weight;
 };
-template<typename Value_T, typename ID_T>
-class rnmark_node
-{
-public:
-	using size_type = rnposition_type;
-	rnmark_node() = default;
-	rnmark_node(const size_type rnlast_n, const size_type rnthis_n, const Value_T& to_this_w): last_node(rnlast_n),
-				this_node(rnthis_n), to_this_weight(to_this_w){};
-	size_type get_last() const
-	{
-		return last_node; 
-	}
-	size_type get_this() const
-	{
-		return this_node;
-	}
-	Value_T get_weight() const
-	{
-		return to_this_weight;
-	}
-	Value_T add(const Value_T& rnw)
-	{
-		to_this_weight += rnw;
-	}
-private:
-	size_type last_node, this_node;  //record link information by node position
-	Value_T to_this_weight;
-};
+/*
+ * template<typename Value_T, typename ID_T>
+ *class rnmark_node
+ *{
+ *public:
+ *	using size_type = rnposition_type;
+ *	rnmark_node() = default;
+ *	rnmark_node(const size_type rnlast_n, const size_type rnthis_n, const Value_T& to_this_w): last_node(rnlast_n),
+ *				this_node(rnthis_n), to_this_weight(to_this_w){};
+ *	size_type get_last() const
+ *	{
+ *		return last_node; 
+ *	}
+ *	size_type get_this() const
+ *	{
+ *		return this_node;
+ *	}
+ *	Value_T get_weight() const
+ *	{
+ *		return to_this_weight;
+ *	}
+ *private:
+ *	size_type last_node, this_node;  //record link information by node position
+ *	Value_T to_this_weight;
+ *};
+ */
 template<typename Value_T, typename ID_T>
 class rnpath
 {
 public:
 	rnpath() = default;
 	rnpath(std::shared_ptr<std::forward_list<ID_T>>& rnflist_ptr, const Value_T& rnsum_w):path_flist_ptr(rnflist_ptr), sum_weight(rnsum_w){}
+	bool IsValid() const
+	{
+		if(!(path_flist_ptr))
+			return false;
+		return true;
+	}
 private:
 	std::shared_ptr<std::forward_list<ID_T>> path_flist_ptr;
 	Value_T sum_weight;
@@ -89,6 +94,15 @@ class rncompare
 	bool operator()(const std::pair<rnposition_type, Value_T>& rnleft, const std::pair<rnposition_type, Value_T>& rnright)
 	{
 		return rngraph<Value_T, ID_T>::get_weight(rnleft.second) > rngraph<Value_T, ID_T>::get_weight(rnright.second);
+	}
+};
+template<typename Value_T, typename ID_T>
+class rncompare2
+{
+	bool operator()(const std::tuple<rnposition_type, rnposition_type, Value_T, Value_T> rnleft, 
+			const std::tuple<rnposition_type, rnposition_type, Value_T, Value_T> rnright)
+	{
+		return rngraph<Value_T, ID_T>::get_weight(get<3>(rnleft)) > rngraph<Value_T, ID_T>::get_weight(get<3>(rnright));
 	}
 };
 //class template rngraph
@@ -301,6 +315,10 @@ private:
 			return NULL_POS;
 		return rniter->second;
 	}
+	ID_T get_ID(const size_type& rnpos) const
+	{
+		return graph[rnpos].first;
+	}
 	void add_pos(const ID_T& rnid, const size_type& rnpos)
 	{
 		if(support_less_operator)
@@ -382,9 +400,100 @@ std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::BFS
 template<typename Value_T, typename ID_T>
 rnpath<Value_T, ID_T> rngraph<Value_T, ID_T>::rnDijkstra(const ID_T& rnorgin, const ID_T& rndest) const
 {
+	if(rnorgin == rndest)
+		return rnpath<Value_T, ID_T>();
+	auto rnorgin_pos = get_pos(rnorgin);
+	auto rndest_pos = get_pos(rndest);
+	if(rnorgin_pos == NULL_POS||rndest_pos == NULL_POS)
+		throw std::runtime_error("Input wrong arguments!!");
+
 	typedef std::pair<size_type, Value_T> P_ELEMENT_T;
+	typedef std::tuple<size_type, size_type, Value_T, Value_T> P_ELEMENT_T2;
 	typedef std::vector<P_ELEMENT_T> P_ELEMENT_CONTAINER_T;
+	typedef std::vector<P_ELEMENT_T2> P_ELEMENT_CONTAINER_T2;
 	typedef std::priority_queue<P_ELEMENT_T, P_ELEMENT_CONTAINER_T, rncompare<Value_T, ID_T>> P_T;
+	typedef std::priority_queue<P_ELEMENT_T2, P_ELEMENT_CONTAINER_T2, rncompare2<Value_T, ID_T>> P_T2;
+//rebuild
+	std::vector<std::pair<bool, std::shared_ptr<P_T>>> rngraph_temp;   //bool means the node has been marked or not
+	rngraph_temp.reserve(graph.size());
+	for(const auto &rnindex: graph)                                    //use priority_queue to rebuild graph data container
+	{
+		std::shared_ptr<P_T> rnptr = std::make_shared<P_T>();
+		rngraph_temp.push_back({false, rnptr});                   //initialize unmarked
+		auto rnbegin = rnindex.second->begin();
+		auto rnend = rnindex.second->end();
+		for(; rnbegin != rnend; ++rnbegin)
+			rnptr->push(*rnbegin);
+	}
+//
+	
+	std::map<size_type, std::pair<size_type, Value_T>> rnmark_map; // map(this ID, pair<last ID, to_this_weight>)-> marked node container
+	P_T2 rnpq;					    // priority_queue(tuple<this node position, last node position, to_this_weight, to_last_weight>)->candidate queue
+	rnpq.push(std::make_tuple(rnorgin_pos, rnorgin_pos, Value_T(), Value_T()));     //push orgin node into candidate queue
+	Value_T rntotal_weight = Value_T();
+	bool rncomplete = false;
+	while(rnpq.size() != 0)
+	{
+		auto rnmarking_node_tuple = rnpq.top();
+		auto rnthis_pos = get<1>(rnmarking_node_tuple);
+	       	auto rnlast_pos = get<2>(rnmarking_node_tuple);
+		auto rnto_this_weight = get<3>(rnmarking_node_tuple);
+		auto rnto_last_weight = get<4>(rnmarking_node_tuple);
+		rnpq.pop();
+		
+		if(rngraph_temp[rnthis_pos].first == false)
+		{
+			rnmark_map.insert({rnthis_pos, {rnlast_pos, rnto_this_weight}});  //mark this node
+			rngraph_temp[rnthis_pos].first = true;        //record sign
+		}
+
+		if(rnthis_pos == rndest_pos)
+		{
+			rntotal_weight = rnto_this_weight;
+			rncomplete = true;
+			break;
+		}
+		//last candidate
+		if(rngraph_temp[rnlast_pos].second->size() != 0)
+		{
+			while(rngraph_temp[rnlast_pos].second->size() != 0)
+			{
+				auto rnlast_candidate_pair = rngraph_temp[rnlast_pos].second->top();
+				rngraph_temp[rnlast_pos].second->pop();
+				if(rngraph_temp[rnlast_candidate_pair.first].first == false)
+					break;
+			}
+			rnpq.push(std::make_tuple(rnlast_candidate_pair.first, rnlast_pos, rnlast_candidate_pair.second + rnto_last_weight, rnto_last_weight));
+		}
+		//this candidate
+		if(rngraph_temp[rnthis_pos].second->size() != 0)
+		{
+			while(rngraph_temp[rnthis_pos].second->size() != 0)
+			{
+				auto rnthis_candidate_pair = rngraph_temp[rnthis_pos].second->top();
+				rngraph_temp[rnthis_pos].second->pop();
+				if(rngraph_temp[rnthis_candidate_pair.first].first == false)
+					break;
+			}
+			rnpq.push(std::make_tuple(rnthis_candidate_pair.first, rnthis_pos, rnthis_candidate_pair.second + rnto_this_weight, rnto_this_weight));
+		}
+		if(rnpq.size() == 0)
+		{
+			for(const auto &rnindex: rnmark_map)
+			{
+				if(rngraph_temp[rnindex.first].second->size() != 0)
+				{
+					auto rncandidate = rngraph_temp[rnindex.first].second->top();
+					rngraph_temp[rnindex.first].second->pop();
+					rnpq.push(std::make_tuple(rncandidate.first, rnindex.first, rncandidate.second + rnindex.second.second, rnindex.second.second));
+				}
+			}
+		}
+	}
+	if(!rncomplete)
+		return rnpath<Value_T, ID_T>();
+	//find path
+
 	
 }
 
