@@ -13,8 +13,9 @@
 #include<stdexcept>
 #include"HasOperatorLess.h"
 
-
+#define DEBUG
 #define DEBUG1
+
 #ifndef rngraph_h
 #define rngraph_h
 #define rnposition_type std::size_t
@@ -84,37 +85,66 @@ public:
 			return false;
 		return true;
 	}
+	Value_T GetWeight() const
+	{
+		return sum_weight;
+	}
+	void Display(std::ostream &rnos = std::cout, const std::string &rnstr = "->") const
+	{
+		if(!IsValid())
+			return;
+		auto rnb = path_flist_ptr->cbegin(), rne = path_flist_ptr->cend();
+		auto rntemp_iter = rnb;
+		while(rnb != rne)
+		{
+			if(++rntemp_iter == rne)
+				break;
+			rnos<<*rnb<<""<<rnstr<<"";
+			++rnb;
+		}
+		rnos<<*rnb<<std::endl;
+	}
 private:
 	std::shared_ptr<std::forward_list<ID_T>> path_flist_ptr;
 	Value_T sum_weight;
 };
 template<typename Value_T, typename ID_T>
-class rncompare
+struct rncompare
 {
 	bool operator()(const std::pair<rnposition_type, Value_T>& rnleft, const std::pair<rnposition_type, Value_T>& rnright)
 	{
-		return rngraph<Value_T, ID_T>::get_weight(rnleft.second) > rngraph<Value_T, ID_T>::get_weight(rnright.second);
+		return rngraph<Value_T, ID_T>::get_value(rnleft.second) > rngraph<Value_T, ID_T>::get_value(rnright.second);
 	}
 };
 template<typename Value_T, typename ID_T>
-class rncompare2
+struct rncompare2
 {
 	bool operator()(const std::tuple<rnposition_type, rnposition_type, Value_T, Value_T> rnleft, 
 			const std::tuple<rnposition_type, rnposition_type, Value_T, Value_T> rnright)
 	{
-		return rngraph<Value_T, ID_T>::get_weight(get<3>(rnleft)) > rngraph<Value_T, ID_T>::get_weight(get<3>(rnright));
+		return rngraph<Value_T, ID_T>::get_value(std::get<2>(rnleft)) > rngraph<Value_T, ID_T>::get_value(std::get<2>(rnright));
 	}
 };
 //class template rngraph
+/* info about DS
+ * graph: vector(pair(ID_T, ptr->vector(pair(pos, value_T))))
+ *                    from                   to
+ * graph_temp: vector(pair(bool, ptr->priority_queue(pair(pos, value_T))))  in rnDijkstra
+ */
 template<typename Value_T, typename ID_T = std::string>
 class rngraph
 {
 	//friend class rnedge<Value_T, ID_T>;
 	friend class rncompare<Value_T, ID_T>;
+	friend class rncompare2<Value_T, ID_T>;
 	static bool support_less_operator;
 	static void initialize()
 	{
 		support_less_operator = HasOperatorLess<ID_T>::value;
+	}
+	static Value_T get_value(const Value_T& rnweight)  //get weight from object of Value_T, 
+	{						  //getting value of Value_T object directly is accepted as default
+		return rnweight;
 	}
 public: 
 	typedef rnposition_type size_type;
@@ -152,13 +182,13 @@ std::cout<<"from:"<<rnfrom<<" to:"<<rnto<<std::endl;
 		if(rnfrom_id == rnto_id)
 		{
 			std::cout<<"ring: "<<rnfrom_id<<std::endl;
-			throw std::invalid_argument("add ring to graph is not permitted!");
+			throw std::runtime_error("add ring to graph is not permitted!");
 		}
 		try
 		{
 			if(IsEdge(rnfrom_id, rnto_id))
 				throw std::invalid_argument("try to add repeated edge.");
-		}catch(std::exception err)
+		}catch(std::invalid_argument err)
 		{
 			std::cerr<<err.what()
 				<<"\nTry to add repeated edge? Enter y or any else"<<std::endl;
@@ -225,7 +255,15 @@ std::cout<<"from:"<<rnfrom<<" to:"<<rnto<<std::endl;
 //net information
 	bool IsEdge(const ID_T& rnfrom_id, const ID_T& rnto_id) const
 	{
-		return (static_cast<unsigned>(GetWeight(rnfrom_id, rnto_id)) != NULL_POS);
+		auto rnptr = get_neighbor(rnfrom_id);
+		auto rnto_pos = get_pos(rnto_id);
+		if(rnptr == NULL_PTR || rnto_pos == NULL_POS)
+			return false;
+		auto rncompare_temp = [&rnto_pos](const std::pair<size_type, Value_T>& rnpair){return rnpair.first == rnto_pos;};
+		auto rniter = std::find_if(rnptr->cbegin(), rnptr->cend(), rncompare_temp);
+		if(rniter != rnptr->cend())
+			return true;
+		return false;
 	}
 	bool IsEdge(const rnedge<Value_T, ID_T>& rne) const
 	{
@@ -288,10 +326,6 @@ std::cout<<"from:"<<rnfrom<<" to:"<<rnto<<std::endl;
 	//template<typename...Args>
 	//void push_vertex(size_type, size_type, const Value_T&, const Args&...args);  //mutable parameter function template
 private:
-	static Value_T get_value(const Value_T& rnweight)  //get weight from object of Value_T, 
-	{						  //getting value of Value_T object directly is accepted as default
-		return rnweight;
-	}
 	std::shared_ptr<std::vector<std::pair<size_type, Value_T>>> get_neighbor(const ID_T& rnid) const
 	{
 		auto rnpos = get_pos(rnid);
@@ -400,12 +434,22 @@ std::pair<bool, ID_T*> rngraph<Value_T, ID_T>::BFS
 template<typename Value_T, typename ID_T>
 rnpath<Value_T, ID_T> rngraph<Value_T, ID_T>::rnDijkstra(const ID_T& rnorgin, const ID_T& rndest) const
 {
-	if(rnorgin == rndest)
-		return rnpath<Value_T, ID_T>();
 	auto rnorgin_pos = get_pos(rnorgin);
 	auto rndest_pos = get_pos(rndest);
 	if(rnorgin_pos == NULL_POS||rndest_pos == NULL_POS)
 		throw std::runtime_error("Input wrong arguments!!");
+	if(rnorgin == rndest)
+	{
+		if(IsEdge(rnorgin, rndest))
+		{
+			auto rnptr = std::make_shared<std::forward_list<ID_T>>();
+			rnptr->insert_after(rnptr->before_begin(), rndest);
+			rnptr->insert_after(rnptr->before_begin(), rnorgin);
+			return rnpath<Value_T, ID_T>(rnptr, GetWeight(rnorgin, rndest));
+		}
+		else
+			return rnpath<Value_T, ID_T>();
+	}
 
 	typedef std::pair<size_type, Value_T> P_ELEMENT_T;
 	typedef std::tuple<size_type, size_type, Value_T, Value_T> P_ELEMENT_T2;
@@ -430,15 +474,15 @@ rnpath<Value_T, ID_T> rngraph<Value_T, ID_T>::rnDijkstra(const ID_T& rnorgin, co
 	std::map<size_type, std::pair<size_type, Value_T>> rnmark_map; // map(this ID, pair<last ID, to_this_weight>)-> marked node container
 	P_T2 rnpq;					    // priority_queue(tuple<this node position, last node position, to_this_weight, to_last_weight>)->candidate queue
 	rnpq.push(std::make_tuple(rnorgin_pos, rnorgin_pos, Value_T(), Value_T()));     //push orgin node into candidate queue
-	Value_T rntotal_weight = Value_T();
+	//Value_T rntotal_weight = Value_T();
 	bool rncomplete = false;
 	while(rnpq.size() != 0)
 	{
-		auto rnmarking_node_tuple = rnpq.top();
-		auto rnthis_pos = get<1>(rnmarking_node_tuple);
-	       	auto rnlast_pos = get<2>(rnmarking_node_tuple);
-		auto rnto_this_weight = get<3>(rnmarking_node_tuple);
-		auto rnto_last_weight = get<4>(rnmarking_node_tuple);
+		P_ELEMENT_T2 rnmarking_node_tuple = rnpq.top();
+		auto rnthis_pos = std::get<0>(rnmarking_node_tuple);
+	    auto rnlast_pos = std::get<1>(rnmarking_node_tuple);
+		auto rnto_this_weight = std::get<2>(rnmarking_node_tuple);
+		auto rnto_last_weight = std::get<3>(rnmarking_node_tuple);
 		rnpq.pop();
 		
 		if(rngraph_temp[rnthis_pos].first == false)
@@ -449,54 +493,68 @@ rnpath<Value_T, ID_T> rngraph<Value_T, ID_T>::rnDijkstra(const ID_T& rnorgin, co
 
 		if(rnthis_pos == rndest_pos)
 		{
-			rntotal_weight = rnto_this_weight;
+			//rntotal_weight = rnto_this_weight;
 			rncomplete = true;
 			break;
 		}
-		//last candidate
-		if(rngraph_temp[rnlast_pos].second->size() != 0)
+//last candidate
+		while(rngraph_temp[rnlast_pos].second->size() != 0)
 		{
-			while(rngraph_temp[rnlast_pos].second->size() != 0)
+			auto rnlast_candidate_pair = rngraph_temp[rnlast_pos].second->top();
+			rngraph_temp[rnlast_pos].second->pop();
+			if(rngraph_temp[rnlast_candidate_pair.first].first == false)
 			{
-				auto rnlast_candidate_pair = rngraph_temp[rnlast_pos].second->top();
-				rngraph_temp[rnlast_pos].second->pop();
-				if(rngraph_temp[rnlast_candidate_pair.first].first == false)
-					break;
+				rnpq.push(std::make_tuple(rnlast_candidate_pair.first, rnlast_pos, rnlast_candidate_pair.second + rnto_last_weight, rnto_last_weight));
+				break;                                                                         // Value_T must overload operator+
 			}
-			rnpq.push(std::make_tuple(rnlast_candidate_pair.first, rnlast_pos, rnlast_candidate_pair.second + rnto_last_weight, rnto_last_weight));
 		}
-		//this candidate
-		if(rngraph_temp[rnthis_pos].second->size() != 0)
+//
+//this candidate
+		while(rngraph_temp[rnthis_pos].second->size() != 0)
 		{
-			while(rngraph_temp[rnthis_pos].second->size() != 0)
+			auto rnthis_candidate_pair = rngraph_temp[rnthis_pos].second->top();
+			rngraph_temp[rnthis_pos].second->pop();
+			if(rngraph_temp[rnthis_candidate_pair.first].first == false)
 			{
-				auto rnthis_candidate_pair = rngraph_temp[rnthis_pos].second->top();
-				rngraph_temp[rnthis_pos].second->pop();
-				if(rngraph_temp[rnthis_candidate_pair.first].first == false)
-					break;
+				rnpq.push(std::make_tuple(rnthis_candidate_pair.first, rnthis_pos, rnthis_candidate_pair.second + rnto_this_weight, rnto_this_weight));
+				break;
 			}
-			rnpq.push(std::make_tuple(rnthis_candidate_pair.first, rnthis_pos, rnthis_candidate_pair.second + rnto_this_weight, rnto_this_weight));
 		}
+//
+//to mark more node before finding the dest
 		if(rnpq.size() == 0)
 		{
 			for(const auto &rnindex: rnmark_map)
 			{
-				if(rngraph_temp[rnindex.first].second->size() != 0)
+				while(rngraph_temp[rnindex.first].second->size() != 0)
 				{
 					auto rncandidate = rngraph_temp[rnindex.first].second->top();
 					rngraph_temp[rnindex.first].second->pop();
-					rnpq.push(std::make_tuple(rncandidate.first, rnindex.first, rncandidate.second + rnindex.second.second, rnindex.second.second));
+					if(rngraph_temp[rncandidate.first].first == false)
+					{
+						rnpq.push(std::make_tuple(rncandidate.first, rnindex.first, rncandidate.second + rnindex.second.second, rnindex.second.second));
+						break;
+					}
 				}
 			}
 		}
+//
 	}
 	if(!rncomplete)
 		return rnpath<Value_T, ID_T>();
 	//find path
-
-	
+	auto rnpath_fl_p = std::make_shared<std::forward_list<ID_T>>();
+	auto rntotal_weight = rnmark_map[rndest_pos].second;
+	auto rnnow_pos = rndest_pos;
+	rnpath_fl_p->insert_after(rnpath_fl_p->before_begin(), graph[rnnow_pos].first);
+	while(rnnow_pos != rnorgin_pos)
+	{
+		rnnow_pos = rnmark_map[rnnow_pos].first;
+		rnpath_fl_p->insert_after(rnpath_fl_p->before_begin(), graph[rnnow_pos].first);
+	}
+	rnpath<Value_T, ID_T> rnpath_ret(rnpath_fl_p, rntotal_weight);
+	return rnpath_ret;
 }
-
 
 ///
 #endif
